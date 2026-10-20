@@ -1,12 +1,14 @@
 package deposit_early_termination_channel.exception;
 
+import org.springframework.http.HttpStatus;
+
 public class BusinessException extends RuntimeException {
 
-    private final int status;
+    private final HttpStatus status;
     private final String code;
 
     public BusinessException(
-            int status,
+            HttpStatus status,
             String code,
             String message
     ) {
@@ -15,7 +17,7 @@ public class BusinessException extends RuntimeException {
         this.code = code;
     }
 
-    public int getStatus() {
+    public HttpStatus getStatus() {
         return status;
     }
 

@@ -4,6 +4,7 @@ import deposit_early_termination_channel.domain.enums.PayoutMethod;
 import deposit_early_termination_channel.domain.model.BranchTermination;
 import deposit_early_termination_channel.exception.BusinessException;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
@@ -135,7 +136,7 @@ public class MciClient {
 
             if (response == null || response.header() == null) {
                 throw new BusinessException(
-                        502,
+                        HttpStatus.BAD_GATEWAY,
                         "UPSTREAM_ERROR",
                         "MCI 응답 형식이 올바르지 않습니다."
                 );
@@ -145,10 +146,13 @@ public class MciClient {
 
         } catch (RestClientResponseException e) {
             boolean timeout =
-                    e.getStatusCode().value() == 504;
+                    e.getStatusCode().value()
+                            == HttpStatus.GATEWAY_TIMEOUT.value();
 
             throw new BusinessException(
-                    timeout ? 504 : 502,
+                    timeout
+                            ? HttpStatus.GATEWAY_TIMEOUT
+                            : HttpStatus.BAD_GATEWAY,
                     timeout
                             ? "UPSTREAM_TIMEOUT"
                             : "UPSTREAM_ERROR",
@@ -157,14 +161,14 @@ public class MciClient {
 
         } catch (ResourceAccessException e) {
             throw new BusinessException(
-                    504,
+                    HttpStatus.GATEWAY_TIMEOUT,
                     "UPSTREAM_TIMEOUT",
                     "MCI 연결 또는 응답을 확인하지 못했습니다."
             );
 
         } catch (RestClientException e) {
             throw new BusinessException(
-                    502,
+                    HttpStatus.BAD_GATEWAY,
                     "UPSTREAM_ERROR",
                     "MCI 응답 처리에 실패했습니다."
             );
@@ -218,7 +222,7 @@ public class MciClient {
             }
 
             throw new BusinessException(
-                    502,
+                    HttpStatus.BAD_GATEWAY,
                     "UPSTREAM_ERROR",
                     "MCI 필드 타입이 올바르지 않습니다: " + key
             );
@@ -231,7 +235,7 @@ public class MciClient {
 
             if (value == null) {
                 throw new BusinessException(
-                        502,
+                        HttpStatus.BAD_GATEWAY,
                         "UPSTREAM_ERROR",
                         "MCI 응답 필드가 없습니다: " + key
                 );

@@ -18,6 +18,7 @@ import deposit_early_termination_channel.repository.CustomerRepository;
 import deposit_early_termination_channel.repository.TerminationQuoteRepository;
 import deposit_early_termination_channel.repository.TerminationRepository;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -95,7 +96,7 @@ public class TerminationService {
 
         if (!"ACTIVE".equals(deposit.status())) {
             throw new BusinessException(
-                    409,
+                    HttpStatus.CONFLICT,
                     "DEPOSIT_ALREADY_TERMINATED",
                     "해지 가능한 상태의 예금이 아닙니다."
             );
@@ -254,7 +255,7 @@ public class TerminationService {
                     result.header().result()
             )) {
                 throw new BusinessException(
-                        502,
+                        HttpStatus.BAD_GATEWAY,
                         "UPSTREAM_ERROR",
                         "해지 결과가 확정되지 않았습니다."
                 );
@@ -329,7 +330,7 @@ public class TerminationService {
         if (termination.getStatus()
                 != TerminationStatus.COMPLETED) {
             throw new BusinessException(
-                    409,
+                    HttpStatus.CONFLICT,
                     "INVALID_STATE_TRANSITION",
                     "완료된 해지 거래만 계산서를 조회할 수 있습니다."
             );
@@ -357,7 +358,7 @@ public class TerminationService {
     ) {
         if (!request.customer().idVerified()) {
             throw new BusinessException(
-                    400,
+                    HttpStatus.BAD_REQUEST,
                     "ID_NOT_VERIFIED",
                     "실명확인이 필요합니다."
             );
@@ -374,7 +375,7 @@ public class TerminationService {
 
         if (count == null || count == 0) {
             throw new BusinessException(
-                    400,
+                    HttpStatus.BAD_REQUEST,
                     "INVALID_REQUEST",
                     "존재하지 않는 직원입니다."
             );
@@ -387,7 +388,7 @@ public class TerminationService {
                         || request.payout().accountNo().isBlank()
         )) {
             throw new BusinessException(
-                    400,
+                    HttpStatus.BAD_REQUEST,
                     "INVALID_REQUEST",
                     "입금 계좌번호가 필요합니다."
             );
@@ -440,7 +441,7 @@ public class TerminationService {
 
         if (globalTxId == null || globalTxId.isBlank()) {
             throw new BusinessException(
-                    502,
+                    HttpStatus.BAD_GATEWAY,
                     "UPSTREAM_ERROR",
                     "MCI 거래고유번호가 없습니다."
             );
@@ -456,7 +457,7 @@ public class TerminationService {
         return terminationRepository.findById(id)
                 .orElseThrow(() ->
                         new BusinessException(
-                                404,
+                                HttpStatus.NOT_FOUND,
                                 "TRANSACTION_NOT_FOUND",
                                 "해지 접수 건을 찾을 수 없습니다."
                         )
@@ -614,35 +615,35 @@ public class TerminationService {
 
     private BusinessException invalidState() {
         return new BusinessException(
-                409,
+                HttpStatus.CONFLICT,
                 "INVALID_STATE_TRANSITION",
                 "현재 상태에서는 해지를 실행할 수 없습니다."
         );
     }
 
-    private int httpStatus(String errorCode) {
+    private HttpStatus httpStatus(String errorCode) {
         return switch (errorCode) {
             case "INVALID_REQUEST",
-                 "ID_NOT_VERIFIED" -> 400;
+                 "ID_NOT_VERIFIED" -> HttpStatus.BAD_REQUEST;
 
-            case "CHANNEL_NOT_ALLOWED" -> 403;
+            case "CHANNEL_NOT_ALLOWED" -> HttpStatus.FORBIDDEN;
 
             case "DEPOSIT_NOT_FOUND",
                  "ACCOUNT_NOT_FOUND",
-                 "TRANSACTION_NOT_FOUND" -> 404;
+                 "TRANSACTION_NOT_FOUND" -> HttpStatus.NOT_FOUND;
 
             case "DEPOSIT_ALREADY_TERMINATED",
-                 "INVALID_STATE_TRANSITION" -> 409;
+                 "INVALID_STATE_TRANSITION" -> HttpStatus.CONFLICT;
 
             case "NOT_BUSINESS_DAY",
                  "BRANCH_ONLY",
-                 "MOBILE_LIMIT_EXCEEDED" -> 422;
+                 "MOBILE_LIMIT_EXCEEDED" -> HttpStatus.UNPROCESSABLE_CONTENT;
 
-            case "ROUTE_DISABLED" -> 503;
+            case "ROUTE_DISABLED" -> HttpStatus.SERVICE_UNAVAILABLE;
 
-            case "UPSTREAM_TIMEOUT" -> 504;
+            case "UPSTREAM_TIMEOUT" -> HttpStatus.GATEWAY_TIMEOUT;
 
-            default -> 502;
+            default -> HttpStatus.BAD_GATEWAY;
         };
     }
 }

@@ -1,8 +1,8 @@
 package deposit_early_termination_channel.domain.model;
 
-import com.team.channel.domain.enums.ApprovalReason;
-import com.team.channel.domain.enums.PayoutMethod;
-import com.team.channel.domain.enums.TerminationStatus;
+import deposit_early_termination_channel.domain.enums.ApprovalReason;
+import deposit_early_termination_channel.domain.enums.PayoutMethod;
+import deposit_early_termination_channel.domain.enums.TerminationStatus;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;

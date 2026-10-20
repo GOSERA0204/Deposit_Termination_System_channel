@@ -1,6 +1,6 @@
 package deposit_early_termination_channel.domain.model;
 
-import com.team.channel.domain.enums.TellerRole;
+import deposit_early_termination_channel.domain.enums.TellerRole;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;

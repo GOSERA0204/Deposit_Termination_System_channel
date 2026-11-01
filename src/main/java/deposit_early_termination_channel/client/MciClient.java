@@ -13,6 +13,8 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
+import java.net.ConnectException;
+import java.net.SocketTimeoutException;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -159,13 +161,43 @@ public class MciClient {
                     "MCI 호출에 실패했습니다."
             );
 
+
         } catch (ResourceAccessException e) {
+
+            // 예외의 원인 체인을 검사
+            Throwable cause = e;
+
+            while (cause != null) {
+
+                // MCI가 연결을 거부한 경우
+                // 요청이 전달되지 않았으므로 FAILED 처리 가능
+                if (cause instanceof ConnectException) {
+                    throw new BusinessException(
+                            HttpStatus.BAD_GATEWAY,
+                            "UPSTREAM_NOT_SENT",
+                            "MCI 연결이 거부되어 요청을 전달하지 못했습니다."
+                    );
+                }
+
+                // 연결 또는 응답 타임아웃
+                // 요청 처리 여부가 불분명하므로 UNKNOWN
+                if (cause instanceof SocketTimeoutException) {
+                    throw new BusinessException(
+                            HttpStatus.GATEWAY_TIMEOUT,
+                            "UPSTREAM_TIMEOUT",
+                            "MCI 응답을 확인하지 못했습니다."
+                    );
+                }
+
+                cause = cause.getCause();
+            }
+
+            // 그 밖의 네트워크 오류도 처리 여부가 불명확하면 UNKNOWN
             throw new BusinessException(
                     HttpStatus.GATEWAY_TIMEOUT,
                     "UPSTREAM_TIMEOUT",
-                    "MCI 연결 또는 응답을 확인하지 못했습니다."
+                    "MCI 요청 처리 여부를 확인할 수 없습니다."
             );
-
         } catch (RestClientException e) {
             throw new BusinessException(
                     HttpStatus.BAD_GATEWAY,

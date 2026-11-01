@@ -23,6 +23,7 @@ public class TerminationQuote {
     private Integer elapsedDays;
 
     // 연 % 단위: 1.7500 = 연 1.75%
+    private BigDecimal baseRate;
     private BigDecimal appliedRate;
 
     private Long interest;

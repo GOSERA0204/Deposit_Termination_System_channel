@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/branch")
@@ -23,19 +24,17 @@ public class ApprovalController {
         this.approvalService = approvalService;
     }
 
-    // X-Teller-Id는 로컬 실습용. 운영환경에서는 인증 컨텍스트에서 직원 ID를 가져와야 한다.
     @PostMapping("/terminations/{id}/approvals")
     public ResponseEntity<ApprovalResponse> create(
             @PathVariable Long id,
-            @RequestHeader("X-Teller-Id") Long actorId,
             @Valid @RequestBody ApprovalCreateRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(approvalService.create(id, actorId, request));
+        return ResponseEntity.status(HttpStatus.CREATED).body(approvalService.create(id, request.requestedBy(), request));
     }
 
     @GetMapping("/approvals")
-    public List<ApprovalResponse> list(
+    public Map<String, List<ApprovalResponse>> list(
             @RequestParam(defaultValue = "PENDING") ApprovalStatus status) {
-        return approvalService.list(status);
+        return Map.of("items", approvalService.list(status));
     }
 
     @GetMapping("/approvals/{approvalId}")
@@ -46,17 +45,15 @@ public class ApprovalController {
     @PostMapping("/approvals/{approvalId}/approve")
     public ApprovalResponse approve(
             @PathVariable Long approvalId,
-            @RequestHeader("X-Teller-Id") Long actorId,
             @Valid @RequestBody ApprovalDecisionRequest request) {
-        return approvalService.approve(approvalId, actorId, request);
+        return approvalService.approve(approvalId, request.approverId(), request);
     }
 
     @PostMapping("/approvals/{approvalId}/reject")
     public ApprovalResponse reject(
             @PathVariable Long approvalId,
-            @RequestHeader("X-Teller-Id") Long actorId,
             @Valid @RequestBody ApprovalRejectRequest request) {
-        return approvalService.reject(approvalId, actorId, request);
+        return approvalService.reject(approvalId, request.approverId(), request);
     }
 }
 

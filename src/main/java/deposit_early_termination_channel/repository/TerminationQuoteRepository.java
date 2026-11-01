@@ -19,13 +19,14 @@ public class TerminationQuoteRepository {
                     termination_id,
                     principal,
                     elapsed_days,
+                    base_rate,
                     applied_rate,
                     interest,
                     tax,
                     payout_amount,
                     quoted_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
 
         jdbcTemplate.update(
@@ -33,6 +34,7 @@ public class TerminationQuoteRepository {
                 quote.getTerminationId(),
                 quote.getPrincipal(),
                 quote.getElapsedDays(),
+                quote.getBaseRate(),
                 quote.getAppliedRate(),
                 quote.getInterest(),
                 quote.getTax(),
@@ -55,6 +57,7 @@ public class TerminationQuoteRepository {
                         .terminationId(rs.getLong("termination_id"))
                         .principal(rs.getLong("principal"))
                         .elapsedDays(rs.getInt("elapsed_days"))
+                        .baseRate(rs.getBigDecimal("base_rate"))
                         .appliedRate(rs.getBigDecimal("applied_rate"))
                         .interest(rs.getLong("interest"))
                         .tax(rs.getLong("tax"))

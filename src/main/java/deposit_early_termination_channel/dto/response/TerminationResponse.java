@@ -1,40 +1,11 @@
 package deposit_early_termination_channel.dto.response;
-
-import deposit_early_termination_channel.domain.enums.ApprovalReason;
-import deposit_early_termination_channel.domain.enums.PayoutMethod;
-import deposit_early_termination_channel.domain.enums.TerminationStatus;
-
+import deposit_early_termination_channel.domain.enums.*;
 import java.time.LocalDateTime;
-import java.util.List;
-import java.util.Map;
-
+import java.util.*;
 public record TerminationResponse(
-        Long id,
-        TerminationStatus status,
-
-        Long tellerId,
-        String terminalNo,
-
-        Long customerId,
-        String customerName,
-        String depositAccountNo,
-
-        PayoutMethod payoutMethod,
-        String payoutAccountNo,
-
-        TerminationQuoteResponse quote,
-        List<ApprovalReason> approvalReasons,
-
-        String globalTxId,
-        Long actualPrincipal,
-        Long actualInterest,
-        Long actualTax,
-        Long actualPayout,
-
-        String failReason,
-        LocalDateTime createdAt,
-        LocalDateTime completedAt,
-
-        Map<String, LinkResponse> _links
-) {
-}
+    Long id, String channelTxId, TerminationStatus status,
+    Long tellerId, String terminalNo, String depositAccountNo, String customerName,
+    boolean isAgent, boolean passbookPresented, PayoutResponse payout,
+    TerminationQuoteResponse quote, List<ApprovalReason> approvalReasons, Long approvalId,
+    String globalTxId, String failCode, LocalDateTime createdAt, LocalDateTime updatedAt,
+    Map<String, LinkResponse> _links) {}

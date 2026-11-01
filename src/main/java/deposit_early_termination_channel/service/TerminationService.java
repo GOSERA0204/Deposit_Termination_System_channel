@@ -10,6 +10,7 @@ import deposit_early_termination_channel.domain.model.TerminationQuote;
 import deposit_early_termination_channel.dto.request.TerminationCreateRequest;
 import deposit_early_termination_channel.dto.response.DepositResponse;
 import deposit_early_termination_channel.dto.response.LinkResponse;
+import deposit_early_termination_channel.dto.response.PayoutResponse;
 import deposit_early_termination_channel.dto.response.TerminationQuoteResponse;
 import deposit_early_termination_channel.dto.response.TerminationReceiptResponse;
 import deposit_early_termination_channel.dto.response.TerminationResponse;
@@ -178,6 +179,7 @@ public class TerminationService {
                                             quote.number("elapsedDays")
                                     )
                             )
+                            .baseRate(deposit.baseRate())
                             .appliedRate(
                                     quote.decimal("appliedRate")
                             )
@@ -214,8 +216,12 @@ public class TerminationService {
         return toResponse(findRequired(id));
     }
 
-    public TerminationResponse execute(Long id) {
+    public TerminationResponse execute(Long id, Long tellerId) {
         BranchTermination current = findRequired(id);
+        if (!current.getTellerId().equals(tellerId)) {
+            throw new BusinessException(HttpStatus.FORBIDDEN, "NOT_REQUEST_OWNER",
+                    "접수한 직원만 해지를 실행할 수 있습니다.");
+        }
 
         if (hasExistingResult(current.getStatus())) {
             return toResponse(current);
@@ -261,25 +267,40 @@ public class TerminationService {
                 );
             }
 
+
         } catch (RuntimeException e) {
-            // 요청 이후 결과가 불명확하면 실패로 단정하지 않음
+
+            // 1. 오류 코드 확인
             String errorCode =
                     e instanceof BusinessException businessException
                             ? businessException.getCode()
                             : "UPSTREAM_ERROR";
 
-            transactionTemplate.executeWithoutResult(
-                    txStatus ->
-                            terminationRepository.finishWithError(
-                                    id,
-                                    TerminationStatus.UNKNOWN,
-                                    null,
-                                    errorCode
-                            )
-            );
+            // 2. 오류 종류에 따라 거래 상태 결정
+            TerminationStatus errorStatus =
+                    "UPSTREAM_NOT_SENT".equals(errorCode)
+                            ? TerminationStatus.FAILED
+                            : TerminationStatus.UNKNOWN;
 
+            // 3. 변경된 상태를 DB에 저장
+            transactionTemplate.executeWithoutResult(txStatus -> {
+
+                int changed = terminationRepository.finishWithError(
+                        id,
+                        errorStatus,
+                        null,
+                        errorCode
+                );
+
+                if (changed != 1) {
+                    throw invalidState();
+                }
+            });
+
+            // 4. 최종 거래 상태 반환
             return get(id);
         }
+
 
         // 3. 확정된 업무 실패 저장
         if (!result.success()) {
@@ -288,15 +309,19 @@ public class TerminationService {
                             ? "UPSTREAM_ERROR"
                             : result.header().errorCode();
 
-            transactionTemplate.executeWithoutResult(
-                    txStatus ->
-                            terminationRepository.finishWithError(
-                                    id,
-                                    TerminationStatus.FAILED,
-                                    result.header().globalTxId(),
-                                    errorCode
-                            )
-            );
+            transactionTemplate.executeWithoutResult(txStatus -> {
+
+                int changed = terminationRepository.finishWithError(
+                        id,
+                        TerminationStatus.FAILED,
+                        result.header().globalTxId(),
+                        errorCode
+                );
+
+                if (changed != 1) {
+                    throw invalidState();
+                }
+            });
 
             throw new BusinessException(
                     httpStatus(errorCode),
@@ -336,20 +361,30 @@ public class TerminationService {
             );
         }
 
+        TerminationQuote quote = quoteRepository.findByTerminationId(id);
+        Long approverId = jdbcTemplate.query("""
+                SELECT approver_id FROM approval
+                WHERE termination_id = ? AND status = 'APPROVED'
+                ORDER BY id DESC LIMIT 1
+                """, (rs, row) -> rs.getObject("approver_id", Long.class), id)
+                .stream().filter(Objects::nonNull).findFirst().orElse(null);
         return new TerminationReceiptResponse(
                 termination.getId(),
                 termination.getGlobalTxId(),
-                customerRepository.findName(
-                        termination.getCustomerId()
-                ),
                 termination.getDepositAccountNo(),
+                customerRepository.findName(termination.getCustomerId()),
                 termination.getActualPrincipal(),
+                quote.getElapsedDays(),
+                quote.getAppliedRate(),
                 termination.getActualInterest(),
                 termination.getActualTax(),
                 termination.getActualPayout(),
-                termination.getPayoutMethod(),
-                termination.getPayoutAccountNo(),
-                termination.getCompletedAt()
+                new PayoutResponse(termination.getPayoutMethod(), termination.getPayoutAccountNo()),
+                termination.getTellerId(),
+                approverId,
+                termination.getCompletedAt(),
+                Map.of("self", link("/branch/terminations/" + id + "/receipt"),
+                       "termination", link("/branch/terminations/" + id))
         );
     }
 
@@ -365,10 +400,10 @@ public class TerminationService {
         }
 
         Integer count = jdbcTemplate.queryForObject("""
-                SELECT COUNT(*)
-                FROM teller
-                WHERE id = ?
-                """,
+                        SELECT COUNT(*)
+                        FROM teller
+                        WHERE id = ?
+                        """,
                 Integer.class,
                 request.tellerId()
         );
@@ -410,11 +445,11 @@ public class TerminationService {
         }
 
         List<Long> approvalIds = jdbcTemplate.query("""
-                SELECT id
-                FROM approval
-                WHERE termination_id = ?
-                  AND status = 'APPROVED'
-                """,
+                        SELECT id
+                        FROM approval
+                        WHERE termination_id = ?
+                          AND status = 'APPROVED'
+                        """,
                 (rs, rowNum) -> rs.getLong("id"),
                 termination.getId()
         );
@@ -473,44 +508,23 @@ public class TerminationService {
                 );
 
         return new TerminationResponse(
-                termination.getId(),
-                termination.getStatus(),
-
-                termination.getTellerId(),
-                termination.getTerminalNo(),
-
-                termination.getCustomerId(),
-                customerRepository.findName(
-                        termination.getCustomerId()
-                ),
-                termination.getDepositAccountNo(),
-
-                termination.getPayoutMethod(),
-                termination.getPayoutAccountNo(),
-
-                new TerminationQuoteResponse(
-                        quote.getPrincipal(),
-                        quote.getElapsedDays(),
-                        quote.getAppliedRate(),
-                        quote.getInterest(),
-                        quote.getTax(),
-                        quote.getPayoutAmount()
-                ),
-
-                termination.getApprovalReasons(),
-                termination.getGlobalTxId(),
-
-                termination.getActualPrincipal(),
-                termination.getActualInterest(),
-                termination.getActualTax(),
-                termination.getActualPayout(),
-
-                termination.getFailReason(),
-                termination.getCreatedAt(),
-                termination.getCompletedAt(),
-
-                createLinks(termination)
+                termination.getId(), "B-" + termination.getId(), termination.getStatus(),
+                termination.getTellerId(), termination.getTerminalNo(),
+                termination.getDepositAccountNo(), customerRepository.findName(termination.getCustomerId()),
+                termination.isAgent(), termination.isPassbookPresented(),
+                new PayoutResponse(termination.getPayoutMethod(), termination.getPayoutAccountNo()),
+                new TerminationQuoteResponse(quote.getPrincipal(), quote.getElapsedDays(),
+                        quote.getBaseRate(), quote.getAppliedRate(), quote.getInterest(),
+                        quote.getTax(), quote.getPayoutAmount()),
+                termination.getApprovalReasons(), findApprovalId(termination.getId()),
+                termination.getGlobalTxId(), termination.getFailReason(),
+                termination.getCreatedAt(), termination.getUpdatedAt(), createLinks(termination)
         );
+    }
+
+    private Long findApprovalId(Long terminationId) {
+        return jdbcTemplate.query("SELECT id FROM approval WHERE termination_id = ? ORDER BY id DESC LIMIT 1",
+                (rs, row) -> rs.getLong("id"), terminationId).stream().findFirst().orElse(null);
     }
 
     private Map<String, LinkResponse> createLinks(
@@ -573,10 +587,10 @@ public class TerminationService {
         }
 
         List<Long> approvalIds = jdbcTemplate.query("""
-                SELECT id
-                FROM approval
-                WHERE termination_id = ?
-                """,
+                        SELECT id
+                        FROM approval
+                        WHERE termination_id = ?
+                        """,
                 (rs, rowNum) -> rs.getLong("id"),
                 termination.getId()
         );

@@ -2,6 +2,7 @@ package deposit_early_termination_channel.controller;
 
 import deposit_early_termination_channel.domain.enums.TerminationStatus;
 import deposit_early_termination_channel.dto.request.TerminationCreateRequest;
+import deposit_early_termination_channel.dto.request.TerminationExecuteRequest;
 import deposit_early_termination_channel.dto.response.DepositResponse;
 import deposit_early_termination_channel.dto.response.TerminationReceiptResponse;
 import deposit_early_termination_channel.dto.response.TerminationResponse;
@@ -72,10 +73,11 @@ public class TerminationController {
 
     @PostMapping("/terminations/{id}/execute")
     public ResponseEntity<TerminationResponse> execute(
-            @PathVariable("id") Long id
+            @PathVariable("id") Long id,
+            @Valid @RequestBody TerminationExecuteRequest request
     ) {
         TerminationResponse response =
-                terminationService.execute(id);
+                terminationService.execute(id, request.tellerId());
 
         if (response.status() == TerminationStatus.PROCESSING
                 || response.status() == TerminationStatus.UNKNOWN) {

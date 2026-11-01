@@ -15,6 +15,11 @@ import deposit_early_termination_channel.repository.ApprovalRepository;
 import deposit_early_termination_channel.repository.ApprovalTellerRepository;
 import deposit_early_termination_channel.repository.TerminationApprovalRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import deposit_early_termination_channel.dto.response.LinkResponse;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,12 +30,17 @@ public class ApprovalService {
     private final ApprovalRepository approvals;
     private final ApprovalTellerRepository tellers;
     private final TerminationApprovalRepository terminations;
+    private final JdbcTemplate jdbc;
+    private final String publicBaseUrl;
 
     public ApprovalService(ApprovalRepository approvals, ApprovalTellerRepository tellers,
-                           TerminationApprovalRepository terminations) {
+                           TerminationApprovalRepository terminations, JdbcTemplate jdbc,
+                           @Value("${app.public-base-url}") String publicBaseUrl) {
         this.approvals = approvals;
         this.tellers = tellers;
         this.terminations = terminations;
+        this.jdbc = jdbc;
+        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
     @Transactional
@@ -48,27 +58,27 @@ public class ApprovalService {
         Long id = approvals.insert(terminationId, termination.reasons(), payout, actorId, request.memo());
         requireOne(terminations.updateStatus(terminationId, TerminationStatus.RECEIVED,
                 TerminationStatus.WAITING_APPROVAL));
-        return ApprovalResponse.from(approvals.findById(id));
+        return toResponse(approvals.findById(id));
     }
 
     @Transactional(readOnly = true)
     public List<ApprovalResponse> list(ApprovalStatus status) {
-        return approvals.findByStatus(status).stream().map(ApprovalResponse::from).toList();
+        return approvals.findByStatus(status).stream().map(this::toResponse).toList();
     }
 
     @Transactional(readOnly = true)
     public ApprovalResponse detail(Long approvalId) {
-        return ApprovalResponse.from(approvals.findById(approvalId));
+        return toResponse(approvals.findById(approvalId));
     }
 
     @Transactional
     public ApprovalResponse approve(Long id, Long actorId, ApprovalDecisionRequest request) {
-        return decide(id, actorId, ApprovalStatus.APPROVED, request.decisionNote());
+        return decide(id, actorId, ApprovalStatus.APPROVED, request.comment());
     }
 
     @Transactional
     public ApprovalResponse reject(Long id, Long actorId, ApprovalRejectRequest request) {
-        return decide(id, actorId, ApprovalStatus.REJECTED, request.decisionNote());
+        return decide(id, actorId, ApprovalStatus.REJECTED, request.reason());
     }
 
     private ApprovalResponse decide(Long id, Long actorId, ApprovalStatus decision, String note) {
@@ -97,7 +107,32 @@ public class ApprovalService {
         requireOne(terminations.updateStatus(termination.id(),
                 TerminationStatus.WAITING_APPROVAL,
                 decision == ApprovalStatus.APPROVED ? TerminationStatus.APPROVED : TerminationStatus.REJECTED));
-        return ApprovalResponse.from(approvals.findById(id));
+        return toResponse(approvals.findById(id));
+    }
+
+    private ApprovalResponse toResponse(Approval a) {
+        // The existing five-table schema supplies the related customer/deposit details.
+        var owner = jdbc.query("""
+            SELECT c.name AS customer_name, bt.deposit_account_no
+              FROM branch_termination bt JOIN customer c ON c.id = bt.customer_id
+             WHERE bt.id = ?
+            """, (rs, row) -> new String[]{rs.getString("customer_name"),
+                rs.getString("deposit_account_no")}, a.getTerminationId());
+        if (owner.isEmpty()) {
+            throw new BusinessException(HttpStatus.CONFLICT, "INVALID_STATE_TRANSITION", "승인 대상 거래 정보를 찾을 수 없습니다.");
+        }
+        String base = "/branch/approvals/" + a.getId();
+        Map<String, LinkResponse> links = new LinkedHashMap<>();
+        links.put("self", new LinkResponse(publicBaseUrl + base));
+        links.put("termination", new LinkResponse(publicBaseUrl + "/branch/terminations/" + a.getTerminationId()));
+        if (a.getStatus() == ApprovalStatus.PENDING) {
+            links.put("approve", new LinkResponse(publicBaseUrl + base + "/approve"));
+            links.put("reject", new LinkResponse(publicBaseUrl + base + "/reject"));
+        }
+        return new ApprovalResponse(a.getId(), a.getTerminationId(), a.getStatus(), a.getReasons(),
+            owner.get(0)[0], owner.get(0)[1], a.getPayoutAmount(), a.getRequestedBy(),
+            a.getRequestedAt(), a.getMemo(), a.getApproverId(), a.getDecidedAt(),
+            a.getDecisionNote(), links);
     }
 
     private static void requireOne(int rows) {
